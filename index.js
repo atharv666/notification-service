@@ -1,41 +1,43 @@
+const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const axios = require("axios");
+const OneSignal = require("onesignal-node");
 
+// Parse the Firebase service account key from environment variable
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_KEY_JSON);
-const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
-const ONESIGNAL_API_KEY = process.env.ONESIGNAL_API_KEY;
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-const db = admin.firestore();
+// Setup OneSignal client
+const client = new OneSignal.Client({
+  app: {
+    appAuthKey: process.env.ONESIGNAL_API_KEY,   // Updated key name here
+    appId: process.env.ONESIGNAL_APP_ID
+  }
+});
 
-db.collection("allusers").onSnapshot((snapshot) => {
-  snapshot.docChanges().forEach(async (change) => {
-    if (change.type === "added") {
-      const data = change.doc.data();
-      const title = data.title;
-      const description = data.description;
+exports.sendNotification = functions.firestore
+  .document("allusers/{eventId}")
+  .onCreate(async (snap, context) => {
+    const data = snap.data();
+    const title = data.title;
+    const description = data.description;
 
-      const payload = {
-        app_id: ONESIGNAL_APP_ID,
-        included_segments: ["All"],
-        headings: { en: title },
-        contents: { en: description },
-      };
+    const notification = {
+      contents: {
+        en: description
+      },
+      headings: {
+        en: title
+      },
+      included_segments: ['All']
+    };
 
-      try {
-        const response = await axios.post("https://onesignal.com/api/v1/notifications", payload, {
-          headers: {
-            Authorization: `Basic ${ONESIGNAL_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        });
-        console.log("Push sent:", response.data);
-      } catch (error) {
-        console.error("Push failed:", error);
-      }
+    try {
+      const response = await client.createNotification(notification);
+      console.log("Notification sent successfully:", response.body);
+    } catch (error) {
+      console.error("Error sending notification:", error);
     }
   });
-});
